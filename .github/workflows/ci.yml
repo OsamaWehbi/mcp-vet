@@ -63,7 +63,7 @@ jobs:
       - name: pip-audit (dependency CVEs)
         run: pip-audit --progress-spinner off --skip-editable
       - name: Gitleaks (secret scanning)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
