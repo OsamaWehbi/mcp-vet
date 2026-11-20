@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "poisoned": { "command": "python", "args": ["examples/servers/poisoned_server.py"] },
+    "overprivileged": { "command": "python", "args": ["examples/servers/overprivileged_server.py"] },
+    "shadowing": { "command": "python", "args": ["examples/servers/shadowing_server.py"] },
+    "mail": { "command": "python", "args": ["examples/servers/mail_server.py"] },
+    "clean": { "command": "python", "args": ["examples/servers/clean_server.py"] }
+  }
+}
