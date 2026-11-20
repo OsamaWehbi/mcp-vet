@@ -30,6 +30,15 @@ class Severity(IntEnum):
         return self.name.lower()
 
 
+def _sha256(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _str(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
 class ToolDef(BaseModel):
     """A tool as advertised by an MCP server, in MCP wire format."""
 
@@ -54,14 +63,20 @@ class ToolDef(BaseModel):
 
     def fingerprint(self) -> str:
         """Stable SHA-256 of everything the model sees about this tool."""
-        payload = {
-            "name": self.name,
-            "description": self.description,
-            "inputSchema": self.input_schema,
-            "annotations": self.annotations,
-        }
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return _sha256(
+            {
+                "name": self.name,
+                "description": self.description,
+                "inputSchema": self.input_schema,
+                "annotations": self.annotations,
+            }
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        wire: dict[str, Any] = {"name": self.name, "description": self.description, "inputSchema": self.input_schema}
+        if self.annotations:
+            wire["annotations"] = self.annotations
+        return wire
 
     def text_fields(self) -> list[tuple[str, str]]:
         """Every piece of free text a model will read, with a location label."""
@@ -85,12 +100,105 @@ class ToolDef(BaseModel):
         return fields
 
 
+class PromptDef(BaseModel):
+    """A prompt template as advertised by `prompts/list`."""
+
+    name: str
+    title: str = ""
+    description: str = ""
+    arguments: list[dict[str, Any]] = Field(default_factory=list)
+
+    @classmethod
+    def from_wire(cls, data: dict[str, Any]) -> PromptDef:
+        if not isinstance(data, dict) or not isinstance(data.get("name"), str):
+            raise ValueError("each prompt must be an object with a string 'name'")
+        args = data.get("arguments") or []
+        return cls(
+            name=data["name"],
+            title=_str(data.get("title")),
+            description=_str(data.get("description")),
+            arguments=[a for a in args if isinstance(a, dict)] if isinstance(args, list) else [],
+        )
+
+    def fingerprint(self) -> str:
+        return _sha256(
+            {"name": self.name, "title": self.title, "description": self.description, "arguments": self.arguments}
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        wire: dict[str, Any] = {"name": self.name}
+        for key, value in (("title", self.title), ("description", self.description), ("arguments", self.arguments)):
+            if value:
+                wire[key] = value
+        return wire
+
+    def text_fields(self) -> list[tuple[str, str]]:
+        fields = [(k, v) for k, v in (("title", self.title), ("description", self.description)) if v]
+        for i, arg in enumerate(self.arguments):
+            for key in ("title", "description"):
+                value = arg.get(key)
+                if isinstance(value, str) and value:
+                    fields.append((f"arguments[{i}].{key}", value))
+        return fields
+
+
+class ResourceDef(BaseModel):
+    """A resource (`resources/list`) or resource template (`resources/templates/list`)."""
+
+    uri: str  # the URI, or the URI template when `template` is true
+    name: str = ""
+    title: str = ""
+    description: str = ""
+    mime_type: str = ""
+    template: bool = False
+
+    @classmethod
+    def from_wire(cls, data: dict[str, Any], template: bool = False) -> ResourceDef:
+        key, alt = ("uriTemplate", "uri_template") if template else ("uri", "uri")
+        uri = data.get(key, data.get(alt)) if isinstance(data, dict) else None
+        if not isinstance(uri, str):
+            kind = "resource template" if template else "resource"
+            raise ValueError(f"each {kind} must be an object with a string '{key}'")
+        return cls(
+            uri=uri,
+            name=_str(data.get("name")),
+            title=_str(data.get("title")),
+            description=_str(data.get("description")),
+            mime_type=_str(data.get("mimeType", data.get("mime_type"))),
+            template=template,
+        )
+
+    @property
+    def kind(self) -> str:
+        return "template" if self.template else "resource"
+
+    def fingerprint(self) -> str:
+        return _sha256(self.to_wire())
+
+    def to_wire(self) -> dict[str, Any]:
+        wire: dict[str, Any] = {"uriTemplate" if self.template else "uri": self.uri}
+        for key, value in (
+            ("name", self.name),
+            ("title", self.title),
+            ("description", self.description),
+            ("mimeType", self.mime_type),
+        ):
+            if value:
+                wire[key] = value
+        return wire
+
+    def text_fields(self) -> list[tuple[str, str]]:
+        return [(k, v) for k, v in (("name", self.name), ("title", self.title), ("description", self.description)) if v]
+
+
 class ServerSnapshot(BaseModel):
-    """The tools exposed by one MCP server at scan time."""
+    """The tools, prompts and resources exposed by one MCP server at scan time."""
 
     name: str
     source: str = ""
     tools: list[ToolDef] = Field(default_factory=list)
+    prompts: list[PromptDef] = Field(default_factory=list)
+    resources: list[ResourceDef] = Field(default_factory=list)
 
 
 class Finding(BaseModel):
@@ -98,14 +206,21 @@ class Finding(BaseModel):
     title: str
     severity: Severity
     server: str
-    tool: str | None = None
+    tool: str | None = None  # the tool, prompt or resource the finding is about
+    kind: str = "tool"  # tool, prompt, resource or template
     location: str | None = None
     evidence: str = ""
     owasp: str = ""
     remediation: str = ""
 
-    def sort_key(self) -> tuple[int, str, str, str]:
-        return (-int(self.severity), self.server, self.tool or "", self.rule_id)
+    def sort_key(self) -> tuple[int, str, str, str, str]:
+        return (-int(self.severity), self.server, self.kind, self.tool or "", self.rule_id)
+
+    @property
+    def target(self) -> str:
+        if not self.tool:
+            return self.server
+        return f"{self.server}/{self.tool}" if self.kind == "tool" else f"{self.server}/{self.kind}:{self.tool}"
 
 
 def printable(text: str | None) -> str | None:
