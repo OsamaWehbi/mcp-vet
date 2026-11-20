@@ -44,7 +44,9 @@ pip-audit, Gitleaks and a self-test of the GitHub Action.
 - Open an issue first for larger changes so we can agree on the approach.
 - Keep pull requests focused. One topic per PR is easier to review.
 - Use conventional commit messages such as `feat`, `fix`, `docs`, `test` and `chore`.
-- mcp-vet must never call a scanned server's tools. Only `initialize` and `tools/list` are allowed.
+- `mcp-vet scan` must never call a scanned server's tools, get its prompts or read its resources. Only
+  `initialize` and the list methods (`tools/list`, `prompts/list`, `resources/list`,
+  `resources/templates/list`) are allowed.
 - Keep detection deterministic and explainable. Every finding should say what matched and where.
 - Never commit secrets or real, private tool definitions. Demo servers must stay harmless.
 

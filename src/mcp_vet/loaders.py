@@ -5,8 +5,9 @@ Two kinds of input are supported:
 * **Offline files** (`load_tools_file`): a saved `tools/list` result, a JSON-RPC
   response wrapping one, or a mcp-vet snapshot. Nothing is executed.
 * **Live servers** (`load_client_config`, `connect_stdio`, `connect_http`): mcp-vet
-  starts or connects to the server and calls `initialize` and `tools/list` only.
-  It never calls a tool. Launching a stdio server still runs its code, so only
+  starts or connects to the server and calls `initialize` and the list methods
+  (`tools/list`, `prompts/list`, `resources/list`, `resources/templates/list`) only.
+  It never calls a tool, gets a prompt or reads a resource. Launching a stdio server still runs its code, so only
   scan servers you would be prepared to run.
 """
 
@@ -21,7 +22,7 @@ from typing import Any
 
 import anyio
 
-from mcp_vet.models import ServerSnapshot, ToolDef
+from mcp_vet.models import PromptDef, ResourceDef, ServerSnapshot, ToolDef
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 100
@@ -43,16 +44,34 @@ def _read_json(path: Path) -> Any:
         raise LoadError(f"{path}: invalid JSON ({exc.msg} at line {exc.lineno})") from exc
 
 
-def _tools_from_list(raw: Any, where: str) -> list[ToolDef]:
+LIST_KEYS = ("tools", "prompts", "resources", "resourceTemplates")
+
+
+def _items(raw: Any, key: str, where: str, parse: Any) -> list[Any]:
     if not isinstance(raw, list):
-        raise LoadError(f"{where}: 'tools' must be a list")
-    tools = []
+        raise LoadError(f"{where}: '{key}' must be a list")
+    out = []
     for i, item in enumerate(raw):
         try:
-            tools.append(ToolDef.from_wire(item))
+            out.append(parse(item))
         except ValueError as exc:
-            raise LoadError(f"{where}: tools[{i}]: {exc}") from exc
-    return tools
+            raise LoadError(f"{where}: {key}[{i}]: {exc}") from exc
+    return out
+
+
+def _template(data: Any) -> ResourceDef:
+    return ResourceDef.from_wire(data, template=True)
+
+
+def _snapshot(entry: dict[str, Any], name: str, source: str) -> ServerSnapshot:
+    return ServerSnapshot(
+        name=name,
+        source=source,
+        tools=_items(entry.get("tools", []), "tools", name, ToolDef.from_wire),
+        prompts=_items(entry.get("prompts", []), "prompts", name, PromptDef.from_wire),
+        resources=_items(entry.get("resources", []), "resources", name, ResourceDef.from_wire)
+        + _items(entry.get("resourceTemplates", []), "resourceTemplates", name, _template),
+    )
 
 
 def parse_tools_document(data: Any, default_name: str) -> list[ServerSnapshot]:
@@ -68,21 +87,17 @@ def parse_tools_document(data: Any, default_name: str) -> list[ServerSnapshot]:
             if not isinstance(entry, dict):
                 raise LoadError(f"{default_name}: servers[{i}] must be an object")
             name = str(entry.get("name") or f"{default_name}[{i}]")
-            out.append(
-                ServerSnapshot(
-                    name=name,
-                    source=str(entry.get("source") or default_name),
-                    tools=_tools_from_list(entry.get("tools", []), name),
-                )
-            )
+            out.append(_snapshot(entry, name, str(entry.get("source") or default_name)))
         return out
-    if isinstance(data, dict) and "tools" in data:
-        return [
-            ServerSnapshot(name=default_name, source=default_name, tools=_tools_from_list(data["tools"], default_name))
-        ]
+    if isinstance(data, dict) and any(k in data for k in LIST_KEYS):
+        # A tools/list, prompts/list, resources/list or resources/templates/list result.
+        return [_snapshot(data, default_name, default_name)]
     if isinstance(data, list):
-        return [ServerSnapshot(name=default_name, source=default_name, tools=_tools_from_list(data, default_name))]
-    raise LoadError(f"{default_name}: expected a tools/list result, a list of tools, or a mcp-vet snapshot")
+        return [_snapshot({"tools": data}, default_name, default_name)]
+    raise LoadError(
+        f"{default_name}: expected a tools/list (or prompts/resources list) result, a list of tools, "
+        "or a mcp-vet snapshot"
+    )
 
 
 def load_tools_file(path: str | Path) -> list[ServerSnapshot]:
@@ -94,20 +109,42 @@ def _expand_env(value: str) -> str:
     return _ENV_REF.sub(lambda m: os.environ.get(m.group(1), ""), value)
 
 
-async def _list_all_tools(session: Any) -> list[ToolDef]:
+async def _paginate(method: Any, attr: str) -> list[dict[str, Any]]:
     from mcp import types
 
-    tools: list[ToolDef] = []
+    items: list[dict[str, Any]] = []
     cursor: str | None = None
     for _ in range(MAX_PAGES):
         params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
-        result = await session.list_tools(params=params)
-        for tool in result.tools:
-            tools.append(ToolDef.from_wire(tool.model_dump(by_alias=True, exclude_none=True, mode="json")))
+        result = await method(params=params)
+        items.extend(i.model_dump(by_alias=True, exclude_none=True, mode="json") for i in getattr(result, attr))
         cursor = result.next_cursor
         if not cursor:
             break
-    return tools
+    return items
+
+
+async def _optional(method: Any, attr: str) -> list[dict[str, Any]]:
+    """Prompts and resources are optional. A server that advertises them but cannot list them
+    is still scanned for its tools."""
+    try:
+        return await _paginate(method, attr)
+    except Exception:  # noqa: BLE001 - any failure here only means the optional list is skipped
+        return []
+
+
+async def _list_everything(session: Any, name: str, source: str) -> ServerSnapshot:
+    init = await session.initialize()
+    caps = init.capabilities
+    tools = [ToolDef.from_wire(t) for t in await _paginate(session.list_tools, "tools")]
+    prompts: list[PromptDef] = []
+    resources: list[ResourceDef] = []
+    if caps.prompts is not None:
+        prompts = [PromptDef.from_wire(p) for p in await _optional(session.list_prompts, "prompts")]
+    if caps.resources is not None:
+        resources = [ResourceDef.from_wire(r) for r in await _optional(session.list_resources, "resources")]
+        resources += [_template(r) for r in await _optional(session.list_resource_templates, "resource_templates")]
+    return ServerSnapshot(name=name, source=source, tools=tools, prompts=prompts, resources=resources)
 
 
 async def connect_stdio(
@@ -131,15 +168,13 @@ async def connect_stdio(
         # Server stderr goes to devnull so it cannot pollute reports.
         with anyio.fail_after(timeout), open(os.devnull, "w") as errlog:
             async with stdio_client(params, errlog=errlog) as (read, write), ClientSession(read, write) as session:
-                await session.initialize()
-                tools = await _list_all_tools(session)
+                return await _list_everything(session, name, f"stdio:{command}")
     except TimeoutError as exc:
         raise LoadError(f"{name}: timed out after {timeout:.0f}s") from exc
     except LoadError:
         raise
     except Exception as exc:
         raise LoadError(f"{name}: could not list tools over stdio ({type(exc).__name__}: {exc})") from exc
-    return ServerSnapshot(name=name, source=f"stdio:{command}", tools=tools)
 
 
 async def connect_http(
@@ -159,13 +194,11 @@ async def connect_http(
                 streamable_http_client(url, http_client=http_client) as (read, write),
                 ClientSession(read, write) as session,
             ):
-                await session.initialize()
-                tools = await _list_all_tools(session)
+                return await _list_everything(session, name, url)
     except TimeoutError as exc:
         raise LoadError(f"{name}: timed out after {timeout:.0f}s") from exc
     except Exception as exc:
         raise LoadError(f"{name}: could not list tools over HTTP ({type(exc).__name__}: {exc})") from exc
-    return ServerSnapshot(name=name, source=url, tools=tools)
 
 
 async def _load_config_async(
@@ -222,25 +255,16 @@ def load_http_url(url: str, name: str | None = None, timeout: float = 30.0) -> S
 
 def snapshot_document(snapshots: list[ServerSnapshot]) -> dict[str, Any]:
     """Serialise snapshots so they can be re-scanned offline later."""
-    return {
-        "servers": [
-            {
-                "name": s.name,
-                "source": s.source,
-                "tools": [
-                    {
-                        k: v
-                        for k, v in {
-                            "name": t.name,
-                            "description": t.description,
-                            "inputSchema": t.input_schema,
-                            "annotations": t.annotations or None,
-                        }.items()
-                        if v is not None
-                    }
-                    for t in s.tools
-                ],
-            }
-            for s in snapshots
-        ]
-    }
+    servers = []
+    for s in snapshots:
+        entry: dict[str, Any] = {"name": s.name, "source": s.source, "tools": [t.to_wire() for t in s.tools]}
+        if s.prompts:
+            entry["prompts"] = [p.to_wire() for p in s.prompts]
+        plain = [r.to_wire() for r in s.resources if not r.template]
+        templates = [r.to_wire() for r in s.resources if r.template]
+        if plain:
+            entry["resources"] = plain
+        if templates:
+            entry["resourceTemplates"] = templates
+        servers.append(entry)
+    return {"servers": servers}

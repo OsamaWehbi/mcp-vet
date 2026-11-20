@@ -10,6 +10,7 @@ SECTIONS = {
     "MV3": "Schema weaknesses",
     "MV4": "Rug pulls (needs --lock)",
     "MV5": "Shadowing",
+    "MV6": "Prompts and resources",
 }
 
 lines = [

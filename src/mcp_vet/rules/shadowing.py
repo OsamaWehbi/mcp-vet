@@ -57,15 +57,22 @@ def check(servers: list[ServerSnapshot]) -> list[Finding]:
 
     for server in servers:
         own = {t.name for t in server.tools}
-        for tool in server.tools:
-            text = " ".join(t for _, t in tool.text_fields())
+        items = [(t.name, "tool", t.text_fields()) for t in server.tools]
+        items += [(p.name, "prompt", p.text_fields()) for p in server.prompts]
+        items += [(r.uri, r.kind, r.text_fields()) for r in server.resources]
+        for name, kind, fields in items:
+            text = " ".join(t for _, t in fields)
             for other, srvs in foreign.items():
                 if other in own or server.name in srvs:
                     continue
                 if patterns[other].search(text):
                     findings.append(
                         RULES["MV502"].finding(
-                            server.name, tool.name, "description", f"mentions '{other}' from {', '.join(sorted(srvs))}"
+                            server.name,
+                            name,
+                            "description",
+                            f"mentions '{other}' from {', '.join(sorted(srvs))}",
+                            kind=kind,
                         )
                     )
     return findings

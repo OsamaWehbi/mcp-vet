@@ -6,14 +6,14 @@ from collections.abc import Iterable
 
 from mcp_vet import lockfile
 from mcp_vet.models import Finding, ServerSnapshot, Severity
-from mcp_vet.rules import permissions, poisoning, schema, shadowing
+from mcp_vet.rules import permissions, poisoning, resources, schema, shadowing
 
-CHECKS = (poisoning.check, permissions.check, schema.check, shadowing.check)
+CHECKS = (poisoning.check, permissions.check, schema.check, shadowing.check, resources.check)
 
 
 def scan(
     servers: list[ServerSnapshot],
-    pins: dict[str, dict[str, str]] | None = None,
+    pins: lockfile.Pins | None = None,
     ignore: Iterable[str] = (),
     min_severity: Severity = Severity.INFO,
 ) -> list[Finding]:
@@ -24,10 +24,10 @@ def scan(
     if pins is not None:
         findings.extend(lockfile.check(servers, pins))
 
-    seen: set[tuple[str, str, str | None, str | None, str]] = set()
+    seen: set[tuple[str, str, str, str | None, str | None, str]] = set()
     unique: list[Finding] = []
     for f in findings:
-        key = (f.rule_id, f.server, f.tool, f.location, f.evidence)
+        key = (f.rule_id, f.server, f.kind, f.tool, f.location, f.evidence)
         if f.rule_id in ignored or f.severity < min_severity or key in seen:
             continue
         seen.add(key)

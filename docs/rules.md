@@ -7,10 +7,10 @@ Skip a rule with `--ignore MV105` and hide low-severity results with `--min-seve
 
 | Rule | Severity | Title | OWASP |
 | --- | --- | --- | --- |
-| [MV101](#mv101) | high | Instructions aimed at the model in tool metadata | LLM01:2025 Prompt Injection |
+| [MV101](#mv101) | high | Instructions aimed at the model in metadata | LLM01:2025 Prompt Injection |
 | [MV102](#mv102) | medium | Reference to secrets or sensitive files | LLM02:2025 Sensitive Information Disclosure |
 | [MV103](#mv103) | high | Hidden or invisible Unicode characters | LLM01:2025 Prompt Injection |
-| [MV104](#mv104) | medium | Encoded payload in tool metadata | LLM01:2025 Prompt Injection |
+| [MV104](#mv104) | medium | Encoded payload in metadata | LLM01:2025 Prompt Injection |
 | [MV105](#mv105) | low | Oversized or padded description | LLM01:2025 Prompt Injection |
 | [MV201](#mv201) | high | Arbitrary command or code execution | LLM06:2025 Excessive Agency |
 | [MV202](#mv202) | medium | Destructive or write access to the filesystem | LLM06:2025 Excessive Agency |
@@ -22,21 +22,24 @@ Skip a rule with `--ignore MV105` and hide low-severity results with `--min-seve
 | [MV302](#mv302) | medium | Free-text command, code or SQL parameter | LLM06:2025 Excessive Agency |
 | [MV303](#mv303) | low | URL parameter without an allowlist | LLM06:2025 Excessive Agency |
 | [MV304](#mv304) | low | Missing or non-object input schema | LLM06:2025 Excessive Agency |
-| [MV401](#mv401) | high | Tool definition changed since it was pinned | LLM03:2025 Supply Chain |
-| [MV402](#mv402) | medium | New tool not in the lockfile | LLM03:2025 Supply Chain |
-| [MV403](#mv403) | low | Pinned tool was removed | LLM03:2025 Supply Chain |
+| [MV401](#mv401) | high | Definition changed since it was pinned | LLM03:2025 Supply Chain |
+| [MV402](#mv402) | medium | New definition not in the lockfile | LLM03:2025 Supply Chain |
+| [MV403](#mv403) | low | Pinned definition was removed | LLM03:2025 Supply Chain |
 | [MV404](#mv404) | low | Server not in the lockfile | LLM03:2025 Supply Chain |
 | [MV501](#mv501) | medium | Duplicate tool name across servers | LLM03:2025 Supply Chain |
 | [MV502](#mv502) | high | Tool text references another server's tool | LLM01:2025 Prompt Injection |
 | [MV503](#mv503) | medium | Confusable tool name | LLM03:2025 Supply Chain |
+| [MV601](#mv601) | high | Resource exposes a sensitive local file | LLM02:2025 Sensitive Information Disclosure |
+| [MV602](#mv602) | medium | Resource template allows arbitrary file paths | LLM06:2025 Excessive Agency |
+| [MV603](#mv603) | medium | Duplicate prompt name across servers | LLM03:2025 Supply Chain |
 
 ## Tool poisoning
 
 ### MV101
 
-**Instructions aimed at the model in tool metadata** - default severity `high` - LLM01:2025 Prompt Injection
+**Instructions aimed at the model in metadata** - default severity `high` - LLM01:2025 Prompt Injection
 
-Tool or parameter text contains phrasing that tries to steer the model, such as telling it to ignore earlier instructions, hide actions from the user, or follow hidden <IMPORTANT> blocks.
+Tool, parameter, prompt or resource text contains phrasing that tries to steer the model, such as telling it to ignore earlier instructions, hide actions from the user, or follow hidden <IMPORTANT> blocks.
 
 **Remediation:** Descriptions should explain what a tool does, not instruct the model. Remove the text or do not install the server.
 
@@ -44,7 +47,7 @@ Tool or parameter text contains phrasing that tries to steer the model, such as 
 
 **Reference to secrets or sensitive files** - default severity `medium` - LLM02:2025 Sensitive Information Disclosure
 
-Tool text mentions credential stores or sensitive files such as SSH keys, .env files, cloud credentials or MCP client configs. Severity is raised when the text also asks for that data to be read or sent.
+Tool, prompt or resource text mentions credential stores or sensitive files such as SSH keys, .env files, cloud credentials or MCP client configs. Severity is raised when the text also asks for that data to be read or sent.
 
 **Remediation:** A tool should never need the model to fetch secrets on its behalf. Review why the reference is there.
 
@@ -54,11 +57,11 @@ Tool text mentions credential stores or sensitive files such as SSH keys, .env f
 
 Zero-width, bidirectional-control or Unicode tag characters can hide instructions that a human reviewer cannot see but a model still reads.
 
-**Remediation:** Strip the characters and review the decoded text. Legitimate tool metadata does not need them.
+**Remediation:** Strip the characters and review the decoded text. Legitimate metadata does not need them.
 
 ### MV104
 
-**Encoded payload in tool metadata** - default severity `medium` - LLM01:2025 Prompt Injection
+**Encoded payload in metadata** - default severity `medium` - LLM01:2025 Prompt Injection
 
 Long base64 or hex strings in descriptions can smuggle instructions past review. Severity is raised when the decoded text contains injection phrasing.
 
@@ -160,25 +163,25 @@ The tool has no inputSchema or one that is not of type object, so clients cannot
 
 ### MV401
 
-**Tool definition changed since it was pinned** - default severity `high` - LLM03:2025 Supply Chain
+**Definition changed since it was pinned** - default severity `high` - LLM03:2025 Supply Chain
 
-The tool's name, description, schema or annotations differ from the lockfile. Servers can change tool behaviour after approval (a rug pull).
+A tool, prompt or resource differs from the lockfile (for a tool: its description, schema or annotations). Servers can change behaviour after approval (a rug pull).
 
 **Remediation:** Review the diff. If the change is expected, run with --update-lock to re-pin.
 
 ### MV402
 
-**New tool not in the lockfile** - default severity `medium` - LLM03:2025 Supply Chain
+**New definition not in the lockfile** - default severity `medium` - LLM03:2025 Supply Chain
 
-The server now exposes a tool that was not present when the lockfile was written.
+The server now exposes a tool, prompt or resource that was not present when the lockfile was written.
 
-**Remediation:** Review the new tool, then run with --update-lock to pin it.
+**Remediation:** Review it, then run with --update-lock to pin it.
 
 ### MV403
 
-**Pinned tool was removed** - default severity `low` - LLM03:2025 Supply Chain
+**Pinned definition was removed** - default severity `low` - LLM03:2025 Supply Chain
 
-A tool recorded in the lockfile is no longer exposed by the server.
+A tool, prompt or resource recorded in the lockfile is no longer exposed by the server.
 
 **Remediation:** Confirm the removal is expected, then run with --update-lock.
 
@@ -186,7 +189,7 @@ A tool recorded in the lockfile is no longer exposed by the server.
 
 **Server not in the lockfile** - default severity `low` - LLM03:2025 Supply Chain
 
-The server has no entry in the lockfile, so changes to its tools cannot be detected.
+The server has no entry in the lockfile, so changes to its definitions cannot be detected.
 
 **Remediation:** Run with --update-lock to pin it.
 
@@ -215,3 +218,29 @@ A tool's metadata names a tool from a different server. This is the pattern used
 The tool name contains non-ASCII characters or differs from another server's tool only by case or separators, which can be used to impersonate it.
 
 **Remediation:** Use plain ASCII names that are clearly distinct.
+
+## Prompts and resources
+
+### MV601
+
+**Resource exposes a sensitive local file** - default severity `high` - LLM02:2025 Sensitive Information Disclosure
+
+A resource or resource template URI points at credentials, keys, environment files or system password files. Any client that reads the resource hands that data to the model.
+
+**Remediation:** Do not expose secrets as resources. Remove the resource or point it at non-sensitive data.
+
+### MV602
+
+**Resource template allows arbitrary file paths** - default severity `medium` - LLM06:2025 Excessive Agency
+
+A file:// resource template starts its path with a variable, or uses reserved ({+var}), fragment ({#var}) or path ({/var}) expansion, so a model can request files outside the intended directory.
+
+**Remediation:** Restrict the template to a fixed directory and validate the expanded path on the server.
+
+### MV603
+
+**Duplicate prompt name across servers** - default severity `medium` - LLM03:2025 Supply Chain
+
+Two servers expose a prompt with the same name. Clients often surface prompts as slash commands, so one server can impersonate another's prompt.
+
+**Remediation:** Rename one of the prompts or avoid loading both servers together.

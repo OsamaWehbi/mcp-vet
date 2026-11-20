@@ -154,7 +154,8 @@ def scan(
             except lockfile.LockError:
                 existing = None
         lockfile.write_lock(lock, servers, existing)
-        err.print(f"pinned {sum(len(s.tools) for s in servers)} tool(s) to {lock}")
+        pinned = sum(len(s.tools) + len(s.prompts) + len(s.resources) for s in servers)
+        err.print(f"pinned {pinned} definition(s) to {lock}")
     if save_snapshot:
         # ASCII-escaped so hidden characters stay visible in the saved file and in code review.
         save_snapshot.write_text(json.dumps(snapshot_document(servers), indent=2) + "\n", encoding="utf-8")

@@ -27,5 +27,20 @@ def convert_temperature(value: float, from_unit: Unit, to_unit: Unit) -> float:
     return value
 
 
+@server.prompt(description="Writes a short, friendly summary of a city's weather forecast.")
+def forecast_summary(city: str) -> str:
+    return f"Summarise the three-day forecast for {city} in two sentences."
+
+
+@server.resource("weather://stations", name="stations", description="Lists the supported weather stations.")
+def stations() -> str:
+    return "YUL, YYZ, YVR"
+
+
+@server.resource("weather://forecast/{city}", name="forecast", description="The latest forecast for a city.")
+def forecast(city: str) -> str:
+    return f"Forecast for {city}: mild"
+
+
 if __name__ == "__main__":
     server.run("stdio")

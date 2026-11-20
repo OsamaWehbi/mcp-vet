@@ -28,6 +28,7 @@ class Rule:
         location: str | None = None,
         evidence: str = "",
         severity: Severity | None = None,
+        kind: str = "tool",
     ) -> Finding:
         return Finding(
             rule_id=self.id,
@@ -35,6 +36,7 @@ class Rule:
             severity=severity if severity is not None else self.severity,
             server=printable(server) or "",
             tool=printable(tool),
+            kind=kind,
             location=printable(location),
             evidence=printable(evidence) or "",
             owasp=self.owasp,
@@ -43,13 +45,13 @@ class Rule:
 
 
 _RULES = [
-    # --- Tool poisoning -------------------------------------------------------------
+    # --- Poisoning (tools, prompts and resources) -----------------------------------
     Rule(
         "MV101",
-        "Instructions aimed at the model in tool metadata",
+        "Instructions aimed at the model in metadata",
         Severity.HIGH,
         LLM01,
-        "Tool or parameter text contains phrasing that tries to steer the model, such as telling it to "
+        "Tool, parameter, prompt or resource text contains phrasing that tries to steer the model, such as telling it to "
         "ignore earlier instructions, hide actions from the user, or follow hidden <IMPORTANT> blocks.",
         "Descriptions should explain what a tool does, not instruct the model. Remove the text or do not install the server.",
     ),
@@ -58,7 +60,7 @@ _RULES = [
         "Reference to secrets or sensitive files",
         Severity.MEDIUM,
         LLM02,
-        "Tool text mentions credential stores or sensitive files such as SSH keys, .env files, cloud credentials "
+        "Tool, prompt or resource text mentions credential stores or sensitive files such as SSH keys, .env files, cloud credentials "
         "or MCP client configs. Severity is raised when the text also asks for that data to be read or sent.",
         "A tool should never need the model to fetch secrets on its behalf. Review why the reference is there.",
     ),
@@ -69,11 +71,11 @@ _RULES = [
         LLM01,
         "Zero-width, bidirectional-control or Unicode tag characters can hide instructions that a human reviewer "
         "cannot see but a model still reads.",
-        "Strip the characters and review the decoded text. Legitimate tool metadata does not need them.",
+        "Strip the characters and review the decoded text. Legitimate metadata does not need them.",
     ),
     Rule(
         "MV104",
-        "Encoded payload in tool metadata",
+        "Encoded payload in metadata",
         Severity.MEDIUM,
         LLM01,
         "Long base64 or hex strings in descriptions can smuggle instructions past review. Severity is raised when "
@@ -178,27 +180,27 @@ _RULES = [
     # --- Rug pulls -------------------------------------------------------------
     Rule(
         "MV401",
-        "Tool definition changed since it was pinned",
+        "Definition changed since it was pinned",
         Severity.HIGH,
         LLM03,
-        "The tool's name, description, schema or annotations differ from the lockfile. Servers can change "
-        "tool behaviour after approval (a rug pull).",
+        "A tool, prompt or resource differs from the lockfile (for a tool: its description, schema or "
+        "annotations). Servers can change behaviour after approval (a rug pull).",
         "Review the diff. If the change is expected, run with --update-lock to re-pin.",
     ),
     Rule(
         "MV402",
-        "New tool not in the lockfile",
+        "New definition not in the lockfile",
         Severity.MEDIUM,
         LLM03,
-        "The server now exposes a tool that was not present when the lockfile was written.",
-        "Review the new tool, then run with --update-lock to pin it.",
+        "The server now exposes a tool, prompt or resource that was not present when the lockfile was written.",
+        "Review it, then run with --update-lock to pin it.",
     ),
     Rule(
         "MV403",
-        "Pinned tool was removed",
+        "Pinned definition was removed",
         Severity.LOW,
         LLM03,
-        "A tool recorded in the lockfile is no longer exposed by the server.",
+        "A tool, prompt or resource recorded in the lockfile is no longer exposed by the server.",
         "Confirm the removal is expected, then run with --update-lock.",
     ),
     Rule(
@@ -206,7 +208,7 @@ _RULES = [
         "Server not in the lockfile",
         Severity.LOW,
         LLM03,
-        "The server has no entry in the lockfile, so changes to its tools cannot be detected.",
+        "The server has no entry in the lockfile, so changes to its definitions cannot be detected.",
         "Run with --update-lock to pin it.",
     ),
     # --- Shadowing -------------------------------------------------------------
@@ -235,6 +237,34 @@ _RULES = [
         "The tool name contains non-ASCII characters or differs from another server's tool only by case or "
         "separators, which can be used to impersonate it.",
         "Use plain ASCII names that are clearly distinct.",
+    ),
+    # --- Prompts and resources -------------------------------------------------
+    Rule(
+        "MV601",
+        "Resource exposes a sensitive local file",
+        Severity.HIGH,
+        LLM02,
+        "A resource or resource template URI points at credentials, keys, environment files or system "
+        "password files. Any client that reads the resource hands that data to the model.",
+        "Do not expose secrets as resources. Remove the resource or point it at non-sensitive data.",
+    ),
+    Rule(
+        "MV602",
+        "Resource template allows arbitrary file paths",
+        Severity.MEDIUM,
+        LLM06,
+        "A file:// resource template starts its path with a variable, or uses reserved ({+var}), fragment "
+        "({#var}) or path ({/var}) expansion, so a model can request files outside the intended directory.",
+        "Restrict the template to a fixed directory and validate the expanded path on the server.",
+    ),
+    Rule(
+        "MV603",
+        "Duplicate prompt name across servers",
+        Severity.MEDIUM,
+        LLM03,
+        "Two servers expose a prompt with the same name. Clients often surface prompts as slash commands, "
+        "so one server can impersonate another's prompt.",
+        "Rename one of the prompts or avoid loading both servers together.",
     ),
 ]
 
