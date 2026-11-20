@@ -11,6 +11,7 @@ SECTIONS = {
     "MV4": "Rug pulls (needs --lock)",
     "MV5": "Shadowing",
     "MV6": "Prompts and resources",
+    "MV7": "Runtime (mcp-vet proxy only)",
 }
 
 lines = [

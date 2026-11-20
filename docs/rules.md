@@ -32,6 +32,12 @@ Skip a rule with `--ignore MV105` and hide low-severity results with `--min-seve
 | [MV601](#mv601) | high | Resource exposes a sensitive local file | LLM02:2025 Sensitive Information Disclosure |
 | [MV602](#mv602) | medium | Resource template allows arbitrary file paths | LLM06:2025 Excessive Agency |
 | [MV603](#mv603) | medium | Duplicate prompt name across servers | LLM03:2025 Supply Chain |
+| [MV701](#mv701) | high | Instructions aimed at the model in a result | LLM01:2025 Prompt Injection |
+| [MV702](#mv702) | high | Hidden Unicode in a result | LLM01:2025 Prompt Injection |
+| [MV703](#mv703) | high | Encoded instructions in a result | LLM01:2025 Prompt Injection |
+| [MV704](#mv704) | medium | Secret material in a result | LLM02:2025 Sensitive Information Disclosure |
+| [MV705](#mv705) | high | Definition changed during the session | LLM03:2025 Supply Chain |
+| [MV706](#mv706) | medium | Call to an unlisted or blocked item | LLM06:2025 Excessive Agency |
 
 ## Tool poisoning
 
@@ -244,3 +250,53 @@ A file:// resource template starts its path with a variable, or uses reserved ({
 Two servers expose a prompt with the same name. Clients often surface prompts as slash commands, so one server can impersonate another's prompt.
 
 **Remediation:** Rename one of the prompts or avoid loading both servers together.
+
+## Runtime (mcp-vet proxy only)
+
+### MV701
+
+**Instructions aimed at the model in a result** - default severity `high` - LLM01:2025 Prompt Injection
+
+A tool result, prompt or resource contents returned at run time contain phrasing that tries to steer the model. This is indirect prompt injection, for example from a fetched web page or a shared document.
+
+**Remediation:** Treat the source as untrusted. In enforce mode the result is replaced with an error.
+
+### MV702
+
+**Hidden Unicode in a result** - default severity `high` - LLM01:2025 Prompt Injection
+
+Returned content contains Unicode tag characters or bidirectional overrides, which can carry instructions a user cannot see. Other zero-width and bidi characters are reported at medium severity, because they also occur in legitimate right-to-left and emoji text.
+
+**Remediation:** Inspect the decoded text in the proxy log and treat the source as untrusted.
+
+### MV703
+
+**Encoded instructions in a result** - default severity `high` - LLM01:2025 Prompt Injection
+
+Returned content contains a base64 string that decodes to prompt-injection phrasing.
+
+**Remediation:** Treat the source as untrusted.
+
+### MV704
+
+**Secret material in a result** - default severity `medium` - LLM02:2025 Sensitive Information Disclosure
+
+Returned content contains what looks like a private key or an access token, which the model may repeat or pass to another tool. The log shows only a redacted prefix.
+
+**Remediation:** Check why the server returns secrets. Raise --block-on to medium to block these results.
+
+### MV705
+
+**Definition changed during the session** - default severity `high` - LLM03:2025 Supply Chain
+
+A tool, prompt or resource definition differs from the one the server advertised earlier in the same session. This is a rug pull happening while the client is connected.
+
+**Remediation:** Review the change. In enforce mode the changed item is removed from the list and calls to it are refused.
+
+### MV706
+
+**Call to an unlisted or blocked item** - default severity `medium` - LLM06:2025 Excessive Agency
+
+The client called a tool, got a prompt or read a resource that the server did not list, or that the proxy removed from the list.
+
+**Remediation:** Check the client configuration. In enforce mode calls to removed items are refused.

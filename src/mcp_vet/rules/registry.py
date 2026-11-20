@@ -266,6 +266,61 @@ _RULES = [
         "so one server can impersonate another's prompt.",
         "Rename one of the prompts or avoid loading both servers together.",
     ),
+    # --- Runtime (mcp-vet proxy only) -------------------------------------------
+    Rule(
+        "MV701",
+        "Instructions aimed at the model in a result",
+        Severity.HIGH,
+        LLM01,
+        "A tool result, prompt or resource contents returned at run time contain phrasing that tries to steer "
+        "the model. This is indirect prompt injection, for example from a fetched web page or a shared document.",
+        "Treat the source as untrusted. In enforce mode the result is replaced with an error.",
+    ),
+    Rule(
+        "MV702",
+        "Hidden Unicode in a result",
+        Severity.HIGH,
+        LLM01,
+        "Returned content contains Unicode tag characters or bidirectional overrides, which can carry instructions "
+        "a user cannot see. Other zero-width and bidi characters are reported at medium severity, because they "
+        "also occur in legitimate right-to-left and emoji text.",
+        "Inspect the decoded text in the proxy log and treat the source as untrusted.",
+    ),
+    Rule(
+        "MV703",
+        "Encoded instructions in a result",
+        Severity.HIGH,
+        LLM01,
+        "Returned content contains a base64 string that decodes to prompt-injection phrasing.",
+        "Treat the source as untrusted.",
+    ),
+    Rule(
+        "MV704",
+        "Secret material in a result",
+        Severity.MEDIUM,
+        LLM02,
+        "Returned content contains what looks like a private key or an access token, which the model may "
+        "repeat or pass to another tool. The log shows only a redacted prefix.",
+        "Check why the server returns secrets. Raise --block-on to medium to block these results.",
+    ),
+    Rule(
+        "MV705",
+        "Definition changed during the session",
+        Severity.HIGH,
+        LLM03,
+        "A tool, prompt or resource definition differs from the one the server advertised earlier in the same "
+        "session. This is a rug pull happening while the client is connected.",
+        "Review the change. In enforce mode the changed item is removed from the list and calls to it are refused.",
+    ),
+    Rule(
+        "MV706",
+        "Call to an unlisted or blocked item",
+        Severity.MEDIUM,
+        LLM06,
+        "The client called a tool, got a prompt or read a resource that the server did not list, or that the "
+        "proxy removed from the list.",
+        "Check the client configuration. In enforce mode calls to removed items are refused.",
+    ),
 ]
 
 RULES: dict[str, Rule] = {r.id: r for r in _RULES}

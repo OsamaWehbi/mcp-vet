@@ -47,6 +47,8 @@ pip-audit, Gitleaks and a self-test of the GitHub Action.
 - `mcp-vet scan` must never call a scanned server's tools, get its prompts or read its resources. Only
   `initialize` and the list methods (`tools/list`, `prompts/list`, `resources/list`,
   `resources/templates/list`) are allowed.
+- `mcp-vet proxy` must never originate requests. It forwards, rewrites or refuses what the client and
+  server send, and in monitor mode it must not change traffic at all.
 - Keep detection deterministic and explainable. Every finding should say what matched and where.
 - Never commit secrets or real, private tool definitions. Demo servers must stay harmless.
 

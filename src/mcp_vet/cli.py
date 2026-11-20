@@ -8,6 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
+import anyio
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -23,7 +24,9 @@ from mcp_vet.loaders import (
     snapshot_document,
 )
 from mcp_vet.models import ServerSnapshot, Severity
+from mcp_vet.proxy import ProxyError, resolve_command, run_proxy
 from mcp_vet.rules import RULES
+from mcp_vet.runtime import Event, Mode, RuntimeInspector
 
 app = typer.Typer(
     name="mcp-vet",
@@ -189,6 +192,103 @@ def scan(
         raise typer.Exit(EXIT_ERROR)
     if threshold is not None and any(f.severity >= threshold for f in findings):
         raise typer.Exit(EXIT_FINDINGS)
+
+
+LAUNCHERS = {"python", "python3", "py", "node", "npx", "uv", "uvx", "run", "bunx", "deno", "pipx", "docker"}
+
+
+def _guess_name(command: list[str]) -> str:
+    """'npx -y @scope/server-files /tmp' -> 'server-files'; 'python demo_server.py' -> 'demo_server'."""
+    for arg in command:
+        if arg.startswith("-"):
+            continue
+        stem = Path(arg.replace("\\", "/").rstrip("/").split("/")[-1]).stem
+        if stem.lower() not in LAUNCHERS:
+            return stem or "server"
+    return Path(command[0]).stem if command else "server"
+
+
+@app.command(context_settings={"allow_interspersed_args": False})
+def proxy(
+    command: Annotated[
+        list[str],
+        typer.Argument(
+            help="The server command and its arguments. Put it after -- (or after all options).",
+            metavar="-- COMMAND [ARGS]...",
+        ),
+    ],
+    mode: Annotated[
+        Mode, typer.Option(help="monitor logs findings and changes nothing; enforce also blocks them.")
+    ] = Mode.monitor,
+    block_on: Annotated[str, typer.Option(help="In enforce mode, block findings at or above this severity.")] = "high",
+    log: Annotated[Path | None, typer.Option(help="Append every finding to this JSON Lines file.")] = None,
+    name: Annotated[
+        str | None, typer.Option(help="Server name for findings and lockfile lookups (default: from the command).")
+    ] = None,
+    lock: Annotated[
+        Path | None, typer.Option(help="Lockfile to compare advertised definitions against (rug pulls).")
+    ] = None,
+    ignore: Annotated[list[str] | None, typer.Option("--ignore", help="Rule IDs to skip, e.g. MV704.")] = None,
+    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Do not print findings to stderr.")] = False,
+) -> None:
+    """Run a stdio MCP server behind mcp-vet and check its lists and results while an agent uses it.
+
+    Use it in place of the server command in your MCP client config:
+
+        mcp-vet proxy --mode enforce --log mcp-vet.jsonl -- npx -y some-mcp-server
+    """
+    threshold = _severity(block_on)
+    if threshold is None:
+        raise typer.BadParameter("use a severity; for no blocking use --mode monitor", param_hint="--block-on")
+    pins = None
+    if lock:
+        try:
+            pins = lockfile.read_lock(lock)
+        except lockfile.LockError as exc:
+            err.print(f"[red]error:[/] {exc}")
+            raise typer.Exit(EXIT_ERROR) from exc
+    try:
+        resolved = resolve_command(command)
+    except ProxyError as exc:
+        err.print(f"[red]error:[/] {exc}")
+        raise typer.Exit(EXIT_ERROR) from exc
+
+    log_file = log.open("a", encoding="utf-8") if log else None
+
+    def on_event(event: Event) -> None:
+        f = event.finding
+        if not quiet:
+            evidence = f" - {f.evidence[:160]}" if f.evidence else ""
+            err.print(
+                f"mcp-vet: [{f.severity}] {f.rule_id} {f.target}: {f.title} ({event.action}){evidence}",
+                markup=False,
+                highlight=False,
+                soft_wrap=True,
+            )
+        if log_file:
+            # ASCII-escaped so hidden characters in evidence stay visible in the log.
+            log_file.write(json.dumps(event.to_dict()) + "\n")
+            log_file.flush()
+
+    inspector = RuntimeInspector(
+        server=name or _guess_name(command),
+        mode=mode,
+        block_on=threshold,
+        pins=pins,
+        ignore={r.upper() for r in _split(ignore)},
+        on_event=on_event,
+    )
+    if not quiet:
+        err.print(f"mcp-vet {__version__} proxy: {inspector.server} in {mode} mode", markup=False, highlight=False)
+    try:
+        code = anyio.run(run_proxy, resolved, inspector, sys.stdin.buffer, sys.stdout.buffer)
+    except ProxyError as exc:
+        err.print(f"[red]error:[/] {exc}")
+        raise typer.Exit(EXIT_ERROR) from exc
+    finally:
+        if log_file:
+            log_file.close()
+    raise typer.Exit(code)
 
 
 @app.command()
