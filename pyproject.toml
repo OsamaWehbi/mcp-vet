@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-vet"
+version = "0.1.0"
+description = "Security scanner for MCP servers: tool poisoning, over-permission, schema weaknesses, rug pulls and tool shadowing."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Osama Wehbi" }]
+keywords = ["mcp", "model-context-protocol", "ai-security", "llm-security", "prompt-injection", "tool-poisoning", "agents", "sarif"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+dependencies = [
+    "mcp>=2.3,<3",
+    "anyio>=4.9",
+    "pydantic>=2.12,<3",
+    "rich>=13.7",
+    "typer>=0.16",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.17",
+    "bandit>=1.8",
+    "pip-audit>=2.9",
+    "pre-commit>=4.0",
+]
+
+[project.scripts]
+mcp-vet = "mcp_vet.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/OsamaWehbi/mcp-vet"
+Issues = "https://github.com/OsamaWehbi/mcp-vet/issues"
+Changelog = "https://github.com/OsamaWehbi/mcp-vet/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_vet"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "BLE", "UP", "S", "SIM", "RUF"]
+ignore = ["E501", "S101", "RUF001", "RUF002", "RUF003", "RUF012", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S603"]
+"src/mcp_vet/cli.py" = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
