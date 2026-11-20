@@ -18,10 +18,10 @@ listed under known limitations below.
 | Input | What happens |
 |---|---|
 | Offline JSON file | The file is parsed. Nothing is executed and no network connection is made. |
-| `--http URL` | mcp-vet connects and sends `initialize` and `tools/list` only. |
-| `--stdio CMD` or `--config` with a `command` | mcp-vet **starts the server process**, then sends `initialize` and `tools/list` only. |
+| `--http URL` | mcp-vet connects and sends `initialize` and the list methods only (`tools/list`, `prompts/list`, `resources/list`, `resources/templates/list`). |
+| `--stdio CMD` or `--config` with a `command` | mcp-vet **starts the server process**, then sends `initialize` and the list methods only. |
 
-mcp-vet **never calls a scanned server's tools**. However, starting a stdio server runs that server's
+mcp-vet **never calls a scanned server's tools, gets its prompts or reads its resources**. However, starting a stdio server runs that server's
 code with your user's permissions, exactly as an MCP client would. Only scan servers you would be
 prepared to run, or scan them inside a container or a throwaway VM. For servers you do not trust at
 all, ask for their `tools/list` output and scan it offline.
