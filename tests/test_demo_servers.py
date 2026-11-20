@@ -15,7 +15,7 @@ from tests.conftest import EXAMPLES, SERVERS, rule_ids
 SNAPSHOT = EXAMPLES / "demo-snapshot.json"
 
 EXPECTED = {
-    "poisoned": {"MV101", "MV102", "MV103", "MV104", "MV105"},
+    "poisoned": {"MV101", "MV102", "MV103", "MV104", "MV105", "MV601", "MV602"},
     "overprivileged": {"MV102", "MV201", "MV202", "MV203", "MV205", "MV206", "MV301", "MV302", "MV303"},
     "shadowing": {"MV101", "MV502", "MV503"},
     "mail": set(),
@@ -40,6 +40,7 @@ def test_cross_server_exfiltration_is_reported(findings):
 
 def test_clean_server_alone_has_no_findings():
     clean = [s for s in load_tools_file(SNAPSHOT) if s.name == "clean"]
+    assert clean[0].prompts and clean[0].resources  # the clean server exercises prompts and resources too
     assert scan(clean) == []
 
 
@@ -48,8 +49,13 @@ def test_clean_server_alone_has_no_findings():
 async def test_live_server_matches_committed_snapshot(name, python_exe):
     live = await connect_stdio(name, python_exe, [str(SERVERS / f"{name}_server.py")], timeout=60)
     committed = {s.name: s for s in load_tools_file(SNAPSHOT)}[name]
-    assert {t.name: t.fingerprint() for t in live.tools} == {t.name: t.fingerprint() for t in committed.tools}, (
-        "examples/demo-snapshot.json is out of date; regenerate it as described in CONTRIBUTING.md"
+    stale = "examples/demo-snapshot.json is out of date; regenerate it as described in CONTRIBUTING.md"
+    assert {t.name: t.fingerprint() for t in live.tools} == {t.name: t.fingerprint() for t in committed.tools}, stale
+    assert {p.name: p.fingerprint() for p in live.prompts} == {p.name: p.fingerprint() for p in committed.prompts}, (
+        stale
+    )
+    assert {r.uri: r.fingerprint() for r in live.resources} == {r.uri: r.fingerprint() for r in committed.resources}, (
+        stale
     )
 
 
