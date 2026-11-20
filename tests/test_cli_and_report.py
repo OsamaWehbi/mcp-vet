@@ -3,7 +3,7 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-from mcp_vet import report
+from mcp_vet import __version__, report
 from mcp_vet.cli import app
 from mcp_vet.engine import scan
 from mcp_vet.loaders import load_tools_file
@@ -99,7 +99,7 @@ def test_update_lock_requires_lock_path(clean_file):
 def test_rules_and_version_commands():
     out = runner.invoke(app, ["rules"]).stdout
     assert all(rid in out for rid in RULES)
-    assert "0.1.0" in runner.invoke(app, ["version"]).stdout
+    assert __version__ in runner.invoke(app, ["version"]).stdout
 
 
 def test_every_rule_is_documented():

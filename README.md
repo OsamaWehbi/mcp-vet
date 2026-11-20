@@ -251,7 +251,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: OsamaWehbi/mcp-vet@v0.1.0
+      - uses: OsamaWehbi/mcp-vet@v0.2.0
         with:
           args: --config .vscode/mcp.json --lock mcp-vet.lock
           fail-on: high
