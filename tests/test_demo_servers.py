@@ -71,6 +71,7 @@ def test_repository_text_files_are_ascii_only():
     root = SNAPSHOT.parent.parent
     suffixes = {".py", ".json", ".md", ".yml", ".yaml", ".toml", ".txt"}
     skip = {".git", ".venv", "venv", ".ruff_cache", ".pytest_cache", "__pycache__", "build", "dist"}
+    skip |= {p.parent.name for p in root.glob("*/pyvenv.cfg")}  # virtualenvs with any name
     offenders = []
     for path in root.rglob("*"):
         if path.suffix in suffixes and path.is_file() and not skip & set(path.relative_to(root).parts):
