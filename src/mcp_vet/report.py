@@ -21,13 +21,24 @@ HELP_URI = "https://github.com/OsamaWehbi/mcp-vet/blob/main/docs/rules.md"
 
 
 def _target(f: Finding) -> str:
-    return f"{f.server}/{f.tool}" if f.tool else f.server
+    return f.target
+
+
+def _scope(servers: list[ServerSnapshot]) -> str:
+    """'3 server(s), 9 tool(s)', plus prompt and resource counts when there are any."""
+    parts = [f"{len(servers)} server(s)", f"{sum(len(s.tools) for s in servers)} tool(s)"]
+    prompts = sum(len(s.prompts) for s in servers)
+    resources = sum(len(s.resources) for s in servers)
+    if prompts:
+        parts.append(f"{prompts} prompt(s)")
+    if resources:
+        parts.append(f"{resources} resource(s)")
+    return ", ".join(parts)
 
 
 def render_table(findings: list[Finding], servers: list[ServerSnapshot], console: Console) -> None:
     # Finding fields are already escaped by Rule.finding; server names in the header are not findings.
-    tool_count = sum(len(s.tools) for s in servers)
-    console.print(f"[bold]mcp-vet {__version__}[/] scanned {len(servers)} server(s), {tool_count} tool(s)")
+    console.print(f"[bold]mcp-vet {__version__}[/] scanned {escape(_scope(servers))}")
     if not findings:
         console.print("[green]No findings.[/]")
         return
@@ -50,11 +61,26 @@ def to_json(findings: list[Finding], servers: list[ServerSnapshot]) -> str:
     doc = {
         "tool": "mcp-vet",
         "version": __version__,
-        "servers": [{"name": s.name, "source": s.source, "tools": len(s.tools)} for s in servers],
+        "servers": [
+            {
+                "name": s.name,
+                "source": s.source,
+                "tools": len(s.tools),
+                "prompts": len(s.prompts),
+                "resources": len(s.resources),
+            }
+            for s in servers
+        ],
         "summary": summarise(findings),
         "findings": [f.model_dump(mode="json") | {"severity": str(f.severity)} for f in findings],
     }
     return json.dumps(doc, indent=2)
+
+
+def _fingerprint(f: Finding) -> str:
+    # Tool findings keep the v0.1 format so existing code-scanning alerts stay matched.
+    item = (f.tool or "") if f.kind == "tool" else f"{f.kind}:{f.tool or ''}"
+    return f"{f.rule_id}:{f.server}:{item}:{f.location or ''}"
 
 
 def to_sarif(findings: list[Finding], servers: list[ServerSnapshot], artifact_uri: str | None = None) -> str:
@@ -88,7 +114,7 @@ def to_sarif(findings: list[Finding], servers: list[ServerSnapshot], artifact_ur
             "ruleIndex": index[f.rule_id],
             "level": SARIF_LEVEL[f.severity],
             "message": {"text": f"{f.title}: {loc_name}. {f.evidence}".strip()},
-            "partialFingerprints": {"mcpVetTarget/v1": f"{f.rule_id}:{f.server}:{f.tool or ''}:{f.location or ''}"},
+            "partialFingerprints": {"mcpVetTarget/v1": _fingerprint(f)},
             "properties": {"security-severity": SECURITY_SEVERITY[f.severity]},
         }
         location: dict[str, Any] = {"logicalLocations": [{"name": loc_name, "kind": "member"}]}
@@ -124,8 +150,7 @@ def _md(text: str) -> str:
 
 
 def to_markdown(findings: list[Finding], servers: list[ServerSnapshot]) -> str:
-    tool_count = sum(len(s.tools) for s in servers)
-    lines = [f"### mcp-vet: {len(servers)} server(s), {tool_count} tool(s)", ""]
+    lines = [f"### mcp-vet: {_scope(servers)}", ""]
     if not findings:
         lines.append("No findings.")
         return "\n".join(lines) + "\n"

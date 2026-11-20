@@ -1,4 +1,4 @@
-"""Tool poisoning: hidden or model-directed instructions in tool metadata."""
+"""Poisoning: hidden or model-directed instructions in tool, prompt and resource metadata."""
 
 from __future__ import annotations
 
@@ -152,26 +152,37 @@ def _try_base64(blob: str) -> str | None:
 def check(servers: list[ServerSnapshot]) -> list[Finding]:
     findings: list[Finding] = []
     for server in servers:
-        for tool in server.tools:
-            for location, text in tool.text_fields():
-                findings.extend(_check_text(server.name, tool.name, location, text))
-            if len(tool.description) > MAX_DESCRIPTION:
+        items = [(t.name, "tool", t.description, t.text_fields()) for t in server.tools]
+        items += [(p.name, "prompt", p.description, p.text_fields()) for p in server.prompts]
+        items += [(r.uri, r.kind, r.description, r.text_fields()) for r in server.resources]
+        for name, kind, description, fields in items:
+            for location, text in fields:
+                findings.extend(_check_text(server.name, name, location, text, kind))
+            if len(description) > MAX_DESCRIPTION:
                 findings.append(
                     RULES["MV105"].finding(
-                        server.name, tool.name, "description", f"description is {len(tool.description)} characters long"
+                        server.name,
+                        name,
+                        "description",
+                        f"description is {len(description)} characters long",
+                        kind=kind,
                     )
                 )
     return findings
 
 
-def _check_text(server: str, tool: str, location: str, text: str) -> list[Finding]:
+def _check_text(server: str, tool: str, location: str, text: str, kind: str = "tool") -> list[Finding]:
     out: list[Finding] = []
 
     hits = injection_matches(text)
     if hits:
         label, m = hits[0]
         labels = ", ".join(lbl for lbl, _ in hits)
-        out.append(RULES["MV101"].finding(server, tool, location, f"[{labels}] {_snippet(text, m.start(), m.end())}"))
+        out.append(
+            RULES["MV101"].finding(
+                server, tool, location, f"[{labels}] {_snippet(text, m.start(), m.end())}", kind=kind
+            )
+        )
 
     for label, pattern in SENSITIVE_PATTERNS:
         m = pattern.search(text)
@@ -187,6 +198,7 @@ def _check_text(server: str, tool: str, location: str, text: str) -> list[Findin
                     location,
                     f"[{label}] {_snippet(text, m.start(), m.end())}",
                     severity=Severity.HIGH if escalate else None,
+                    kind=kind,
                 )
             )
             break
@@ -197,7 +209,7 @@ def _check_text(server: str, tool: str, location: str, text: str) -> list[Findin
         decoded = _decode_tags(text)
         if decoded:
             evidence += f"; decoded tag text: {decoded[:120]!r}"
-        out.append(RULES["MV103"].finding(server, tool, location, evidence))
+        out.append(RULES["MV103"].finding(server, tool, location, evidence, kind=kind))
 
     for m in BASE64_RE.finditer(text):
         decoded = _try_base64(m.group(0))
@@ -205,19 +217,27 @@ def _check_text(server: str, tool: str, location: str, text: str) -> list[Findin
             continue
         severity = Severity.HIGH if injection_matches(decoded) else None
         out.append(
-            RULES["MV104"].finding(server, tool, location, f"base64 decodes to: {decoded[:120]!r}", severity=severity)
+            RULES["MV104"].finding(
+                server, tool, location, f"base64 decodes to: {decoded[:120]!r}", severity=severity, kind=kind
+            )
         )
         break
     else:
         m = HEX_RE.search(text)
         if m:
-            out.append(RULES["MV104"].finding(server, tool, location, f"{len(m.group(0))}-character hex string"))
+            out.append(
+                RULES["MV104"].finding(server, tool, location, f"{len(m.group(0))}-character hex string", kind=kind)
+            )
 
     m = PADDING_RE.search(text)
     if m:
         out.append(
             RULES["MV105"].finding(
-                server, tool, location, f"{len(m.group(0))} consecutive whitespace characters at offset {m.start()}"
+                server,
+                tool,
+                location,
+                f"{len(m.group(0))} consecutive whitespace characters at offset {m.start()}",
+                kind=kind,
             )
         )
     return out
