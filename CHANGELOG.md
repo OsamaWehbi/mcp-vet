@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-20
+
 ### Added
 - Prompts and resources are scanned, not only tools. Live scans also call `prompts/list`, `resources/list` and `resources/templates/list` when the server supports them, and offline inputs and snapshots can contain them.
 - The poisoning rules (MV101 to MV105) and cross-server references (MV502) now cover prompt and resource text.
@@ -18,7 +20,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Lockfile version 2 pins prompts, resources and templates as well as tools. Version 1 lockfiles are still read, and only their tools are checked.
 - Rule titles MV101 and MV104 no longer say "tool metadata", since they apply to prompts and resources too.
 
-## [0.1.0]
+## [0.1.0] - 2026-11-20
 
 ### Added
 - `mcp-vet scan` for offline tool definitions (`tools/list` results, JSON-RPC responses and snapshots), MCP client configs, stdio servers and Streamable HTTP servers.
@@ -30,3 +32,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Findings mapped to the OWASP Top 10 for LLM Applications 2025.
 - Table, JSON, SARIF 2.1.0 and Markdown output, CI exit codes and a composite GitHub Action.
 - Deliberately vulnerable demo servers and a test harness that checks each rule fires on them and not on a clean server.
+
+[Unreleased]: https://github.com/OsamaWehbi/mcp-vet/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/OsamaWehbi/mcp-vet/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/OsamaWehbi/mcp-vet/releases/tag/v0.1.0
