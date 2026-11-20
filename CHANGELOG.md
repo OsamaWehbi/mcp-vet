@@ -10,6 +10,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - New rules MV601 (resource exposes a sensitive local file), MV602 (`file://` template that reaches any path) and MV603 (duplicate prompt name across servers).
 - Findings carry a `kind` (`tool`, `prompt`, `resource` or `template`); targets are shown as `server/prompt:name`.
 
+- `mcp-vet proxy`, a stdio proxy that checks MCP traffic while an agent runs. Monitor mode logs findings; enforce mode removes flagged definitions from lists, replaces flagged results with an error and refuses calls to removed items. Findings go to stderr and, with `--log`, to a JSON Lines file.
+- Runtime rules MV701 to MV706: injected instructions, hidden Unicode, encoded instructions and secrets in results, definitions that change during a session, and calls to unlisted or removed items.
+- A runtime demo server whose definitions are clean but whose results are hostile.
+
 ### Changed
 - Lockfile version 2 pins prompts, resources and templates as well as tools. Version 1 lockfiles are still read, and only their tools are checked.
 - Rule titles MV101 and MV104 no longer say "tool metadata", since they apply to prompts and resources too.

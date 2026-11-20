@@ -26,6 +26,19 @@ code with your user's permissions, exactly as an MCP client would. Only scan ser
 prepared to run, or scan them inside a container or a throwaway VM. For servers you do not trust at
 all, ask for their `tools/list` output and scan it offline.
 
+## What `mcp-vet proxy` does
+
+The proxy starts the server command it is given, exactly as your MCP client would, and relays
+JSON-RPC between the client and the server over stdio. It never sends a request of its own. In
+monitor mode it forwards every message unchanged. In enforce mode it can remove items from list
+responses, replace a result with an error, or answer a request for a removed item itself instead of
+forwarding it.
+
+The proxy sees all traffic, including tool arguments and results. It writes only findings to stderr
+and to `--log`: rule, target, location and a short evidence snippet. Secrets matched by MV704 are
+redacted to a six-character prefix. Evidence snippets from other rules quote the offending text, so
+treat the log as sensitive if your tools handle private data.
+
 ## Threat model (summary)
 
 | Threat | Control |
@@ -36,14 +49,20 @@ all, ask for their `tools/list` output and scan it offline.
 | Report injection into Markdown summaries | Table separators and backticks are escaped |
 | Shell injection through the GitHub Action inputs | Inputs are passed as environment variables and split into an argument array, never interpolated into the script |
 | Secrets in client configs | `${VAR}` references in `env` and `headers` are expanded at run time; values are never printed or written to reports or snapshots |
+| Injected text in results reaching the model through the proxy's own messages | Block messages name the rule only and never repeat the offending text |
+| Bypassing enforce mode with a JSON-RPC batch | Batches are checked request by request |
+| Hostile servers flooding the proxy | Messages over 64 MB end the session; each string is scanned up to 1 MB |
 
 ## Known limitations
 
 - Detection is heuristic. A determined attacker can phrase instructions that no pattern matches, so a
   clean report is not proof that a server is safe. Treat mcp-vet as one layer, alongside sandboxing,
   least privilege and human approval of sensitive tool calls.
-- mcp-vet only sees what a server advertises at scan time. A server can behave differently at run
-  time or return malicious content in tool results. Use `--lock` in CI to catch definition changes.
+- `mcp-vet scan` only sees what a server advertises at scan time. A server can behave differently at
+  run time or return malicious content in tool results. Use `--lock` in CI to catch definition
+  changes, and `mcp-vet proxy` to check results while an agent runs.
+- The proxy supports stdio servers only, and checks text content only (not images, audio or binary
+  resource blobs). Results are scanned up to 1 MB per string.
 - Capability classification uses tool and parameter names. A tool named innocently that does
   something dangerous will not be flagged by the MV2xx rules.
 
